@@ -1,0 +1,8 @@
+{
+  "OPENAI_API_KEY": "sk-xx",
+  "OPENAI_API_BASE_URL": "http://localhost:11434/v1",
+  "GPT_MODEL": "qwen3-8b-6:latest",
+  "USER_PROMPT": "请认真校对以下句子。\n你只需要寻找错别字、多字、少字的错误。\n若原文存在错误，你回复的格式为：`[修改方法]`\n若整个句子没有问题，则回复“没有问题”/no_think",
+  "REQUEST_DELAY_SECONDS": 2,
+  "POSTS_DIR": "../source/_posts"
+}

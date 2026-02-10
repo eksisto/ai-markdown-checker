@@ -1,0 +1,78 @@
+@@S000001|markdown_test.md@@ 这是第一段文字。
+@@S000002|markdown_test.md@@ 这是同一段内的强制换行（上一行末尾有两个空格）。
+@@S000003|markdown_test.md@@ 这是第二段文字（段落之间空一行）。
+@@S000004|markdown_test.md@@ 引用：Markdown 用于轻量级标记。
+@@S000005|markdown_test.md@@ 多段引用也可以。
+@@S000006|markdown_test.md@@ 引用内同样支持换行。
+@@S000007|markdown_test.md@@ *斜体*（`*斜体*`）
+@@S000008|markdown_test.md@@ _斜体_（`_斜体_`）
+@@S000009|markdown_test.md@@ **粗体**（`**粗体**`）
+@@S000010|markdown_test.md@@ __粗体__（`__粗体__`）
+@@S000011|markdown_test.md@@ ***粗斜体***（`***粗斜体***`）
+@@S000012|markdown_test.md@@ ~~删除线~~（GFM：`~~删除线~~`）
+@@S000013|markdown_test.md@@ <u>下划线（HTML）</u>（Markdown 本身不定义下划线，常用 HTML）
+@@S000014|markdown_test.md@@ 项目 A
+@@S000015|markdown_test.md@@ 项目 B
+@@S000016|markdown_test.md@@ 子项目 B-1
+@@S000017|markdown_test.md@@ 子项目 B-2
+@@S000018|markdown_test.md@@ 三级子项目
+@@S000019|markdown_test.md@@ 项目 C
+@@S000020|markdown_test.md@@ 第一步
+@@S000021|markdown_test.md@@ 第二步
+@@S000022|markdown_test.md@@ 第二步-子步骤 1
+@@S000023|markdown_test.md@@ 第二步-子步骤 2
+@@S000024|markdown_test.md@@ 第三步
+@@S000025|markdown_test.md@@ [ ] 未完成任务
+@@S000026|markdown_test.md@@ [x] 已完成任务
+@@S000027|markdown_test.md@@ [ ] 支持嵌套
+@@S000028|markdown_test.md@@ [x] 子任务已完成
+@@S000029|markdown_test.md@@ [ ] 子任务未完成
+@@S000030|markdown_test.md@@ 请在终端输入：`ping 127.0.0.1`。
+@@S000031|markdown_test.md@@ 下面是三种常见分隔线写法（效果相同）：
+@@S000032|markdown_test.md@@ [中文维基百科](https://zh.wikipedia.org)
+@@S000033|markdown_test.md@@ https://example.com
+@@S000034|markdown_test.md@@ [https://example.com](https://example.com)
+@@S000035|markdown_test.md@@ 邮箱：[test@example.com](mailto:test@example.com)
+@@S000036|markdown_test.md@@ 行内图片（示例链接可替换为你自己的图片地址）：
+@@S000037|markdown_test.md@@ 参考式图片：
+@@S000038|markdown_test.md@@ 外层引用
+@@S000039|markdown_test.md@@ 内层引用
+@@S000040|markdown_test.md@@ 引用中也能用列表
+@@S000041|markdown_test.md@@ 以及 **加粗**
+@@S000042|markdown_test.md@@ 以下字符在 Markdown 中常用于语法，需要转义时可用反斜杠：
+@@S000043|markdown_test.md@@ \* 星号
+@@S000044|markdown_test.md@@ \_ 下划线
+@@S000045|markdown_test.md@@ \# 井号
+@@S000046|markdown_test.md@@ \- 连字符
+@@S000047|markdown_test.md@@ \> 大于号
+@@S000048|markdown_test.md@@ \[ \] 方括号
+@@S000049|markdown_test.md@@ \( \) 圆括号
+@@S000050|markdown_test.md@@ \` 反引号
+@@S000051|markdown_test.md@@ \\ 反斜杠本身
+@@S000052|markdown_test.md@@ 示例：\*这不是斜体\*，而是普通星号。
+@@S000053|markdown_test.md@@ 这是一段带脚注的文字。
+@@S000054|markdown_test.md@@ [^1] 这里还有一个脚注。
+@@S000055|markdown_test.md@@ [^long]
+@@S000056|markdown_test.md@@ [^1]: 这是脚注 1 的内容。
+@@S000057|markdown_test.md@@ [^long]: 这是一个更长的脚注，支持多行与更多说明。
+@@S000058|markdown_test.md@@ 第二行缩进以保持在脚注块内。
+@@S000059|markdown_test.md@@ 术语 1
+@@S000060|markdown_test.md@@ : 术语 1 的解释
+@@S000061|markdown_test.md@@ 术语 2
+@@S000062|markdown_test.md@@ : 术语 2 的解释 A
+@@S000063|markdown_test.md@@ : 术语 2 的解释 B
+@@S000064|markdown_test.md@@ 这里是折叠内容内部：
+@@S000065|markdown_test.md@@ 可以写 Markdown（取决于平台）
+@@S000066|markdown_test.md@@ **加粗**、`代码`、表格等
+@@S000067|markdown_test.md@@ 有些平台会自动为标题生成锚点，你可以尝试链接到本页标题：
+@@S000068|markdown_test.md@@ [跳到“表格”章节](#9-%E8%A1%A8%E6%A0%BCgfm)
+@@S000069|markdown_test.md@@ 行内：$E = mc^2$
+@@S000070|markdown_test.md@@ 块级：
+@@S000071|markdown_test.md@@ **标题**：混合内容
+@@S000072|markdown_test.md@@ **说明**：在同一段中包含 `行内代码`、[链接](https://example.com)、以及 ~~删除线~~。
+@@S000073|markdown_test.md@@ **引用**：
+@@S000074|markdown_test.md@@ 这是一句引用
+@@S000075|markdown_test.md@@ 以及第二行
+@@S000076|markdown_test.md@@ **任务**：
+@@S000077|markdown_test.md@@ [x] 覆盖常用 Markdown
+@@S000078|markdown_test.md@@ [ ] 检查你的平台支持哪些扩展
