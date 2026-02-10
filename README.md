@@ -74,7 +74,7 @@ pip install PySide6 openai tqdm markdown-it-py
 python gui.py
 ```
 
-这会打开“Markdown 校对中心”窗口。
+![gui.py](./screenshot/gui.jpg)
 
 ### 2. 运行校对任务
 
@@ -127,6 +127,8 @@ AI 处理并审查完成后，您可以切换到 **“Git”** 标签页管理�
 ```bash
 python checker.py
 ```
+
+![checker.py](./screenshot/checker.jpg)
 
 它提供了一个交互式的文本菜单，功能与 GUI 相同：
 
