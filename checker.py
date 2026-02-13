@@ -373,6 +373,10 @@ def wait_for_key(message: str = "按任意键继续...") -> None:
 
 
 def mode_changed_files() -> None:
+    # 清除旧的审查进度
+    if PROGRESS_FILE.exists():
+        clear_review_progress()
+    
     clear_screen()
     _render_header("模式 1：校对修改的 Markdown 文件（需要 Git）")
     print(_style(f"目录：{POSTS_DIR}", ANSI_GRAY))
@@ -418,6 +422,10 @@ def make_output_stem(path: Path) -> str:
 
 
 def mode_single_file() -> None:
+    # 清除旧的审查进度
+    if PROGRESS_FILE.exists():
+        clear_review_progress()
+    
     files = list_markdown_files()
     if not files:
         clear_screen()

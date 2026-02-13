@@ -1271,6 +1271,23 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
             input_path = Path(text)
 
+        # 在开始处理前，检查并清除对应的 review_progress
+        output_dir = ensure_output_dir()
+        if mode == "git":
+            expected_change_path = output_dir / "changes.txt"
+            expected_out_path = output_dir / "changes_out.txt"
+        else:
+            stem = input_path.stem
+            expected_change_path = output_dir / f"{stem}.txt"
+            expected_out_path = output_dir / f"{stem}_out.txt"
+        
+        progress_change, progress_out, _ = load_review_progress()
+        if progress_change and progress_out:
+            if (str(Path(progress_change).resolve()) == str(expected_change_path.resolve()) and
+                str(Path(progress_out).resolve()) == str(expected_out_path.resolve())):
+                clear_review_progress()
+                self._log(f"已清除现有的审查进度记录")
+
         self.progress_bar.setValue(0)
         self.progress_label.setText("准备中...")
         self._log("开始任务")
