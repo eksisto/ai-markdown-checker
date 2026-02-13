@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 import time
 import threading
@@ -21,55 +20,24 @@ from checker_add import GitDiffExtractor
 from checker_ai import initialize_client, get_ai_response
 from checker_process_markdown import extract_text_from_markdown, split_into_sentences, write_to_txt
 from clear_output_cache import clear_output_cache
-from checker import (
+from config_manager import load_config, save_config, get_posts_dir, validate_config, REQUIRED_CONFIG_KEYS
+from progress_manager import load_review_progress, save_review_progress, clear_review_progress
+from file_manager import (
     ensure_output_dir,
+    list_output_files,
+    list_markdown_files,
+    resolve_md_path,
+    replace_sentence_in_file,
+    check_sentence_in_file,
+)
+from data_parser import (
+    split_label as split_label_with_tag,
+    parse_label,
     load_change_out,
     load_filtered_change_lines,
-    parse_label,
-    split_label as split_label_with_tag,
-    replace_sentence_in_file,
-    load_review_progress,
-    save_review_progress,
-    clear_review_progress,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = BASE_DIR / "config.json"
-
-REQUIRED_CONFIG_KEYS = [
-    "SYSTEM_PROMPT",
-    "OLLAMA_MODEL",
-    "REQUEST_DELAY_SECONDS",
-]
-
-
-def load_config() -> Dict[str, object]:
-    if not CONFIG_PATH.exists():
-        return {}
-    try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def save_config(config: Dict[str, object]) -> None:
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
-
-
-def get_posts_dir(config: Dict[str, object]) -> Path:
-    posts = config.get("POSTS_DIR")
-    if isinstance(posts, str) and posts.strip():
-        return (BASE_DIR / posts).resolve()
-    return (BASE_DIR / "posts").resolve()
-
-
-def validate_config(config: Dict[str, object]) -> Tuple[bool, str]:
-    missing = [k for k in REQUIRED_CONFIG_KEYS if not config.get(k)]
-    if missing:
-        return False, f"缺少配置项：{', '.join(missing)}"
-    return True, ""
 
 
 class ThemeManager(QtCore.QObject):
@@ -1280,11 +1248,11 @@ class MainWindow(QtWidgets.QMainWindow):
             stem = input_path.stem
             expected_change_path = output_dir / f"{stem}.txt"
             expected_out_path = output_dir / f"{stem}_out.txt"
-        
+
         progress_change, progress_out, _ = load_review_progress()
         if progress_change and progress_out:
             if (str(Path(progress_change).resolve()) == str(expected_change_path.resolve()) and
-                str(Path(progress_out).resolve()) == str(expected_out_path.resolve())):
+                    str(Path(progress_out).resolve()) == str(expected_out_path.resolve())):
                 clear_review_progress()
                 self._log(f"已清除现有的审查进度记录")
 
@@ -1430,12 +1398,7 @@ class MainWindow(QtWidgets.QMainWindow):
         md_path = self._resolve_md_path(item.filename)
         found = False
         if md_path:
-            try:
-                content = md_path.read_text(encoding="utf-8")
-                if item.sentence in content:
-                    found = True
-            except Exception:
-                pass
+            found = check_sentence_in_file(md_path, item.sentence)
 
         if not found:
             # 如果没找到，记录并自动跳转到下一条
@@ -1522,13 +1485,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.review_list.setCurrentRow(next_index)
 
     def _resolve_md_path(self, filename: str) -> Optional[Path]:
-        if filename in self.review_md_cache:
-            return self.review_md_cache[filename]
+        """
+        GUI 特有的 Markdown 路径解析，使用对话框与用户交互
+        """
+        # 先尝试使用通用的解析函数
+        path = resolve_md_path(filename, self.posts_dir, self.review_md_cache)
+        if path:
+            return path
 
+        # 如果有多个匹配项，使用 GUI 对话框让用户选择
         matches = [p for p in self.posts_dir.rglob(filename) if p.is_file()]
-        if len(matches) == 1:
-            self.review_md_cache[filename] = matches[0]
-            return matches[0]
         if len(matches) > 1:
             items = [str(p) for p in matches]
             selection, ok = QtWidgets.QInputDialog.getItem(
@@ -1539,6 +1505,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.review_md_cache[filename] = path
                 return path
 
+        # 使用文件对话框让用户手动定位
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "定位 Markdown 文件", str(self.posts_dir), "Markdown (*.md)"
         )
@@ -1569,7 +1536,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.top_p_field.setText(
             str(self.config.get("top_p", 1)))
         self.posts_dir_edit.setText(str(self.posts_dir))
-        self.prompt_field.setPlainText(str(self.config.get("SYSTEM_PROMPT", "")))
+        self.prompt_field.setPlainText(
+            str(self.config.get("SYSTEM_PROMPT", "")))
         self._update_run_mode()
         self._refresh_git_ui()
 
@@ -1587,7 +1555,8 @@ class MainWindow(QtWidgets.QMainWindow):
         config["OLLAMA_MODEL"] = self.model_field.text().strip()
         config["REQUEST_DELAY_SECONDS"] = float(self.delay_spin.value())
         try:
-            config["temperature"] = float(self.temperature_field.text().strip())
+            config["temperature"] = float(
+                self.temperature_field.text().strip())
         except ValueError:
             config["temperature"] = 1
         try:

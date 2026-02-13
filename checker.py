@@ -9,21 +9,34 @@ from __future__ import annotations
 
 import os
 import sys
-import json
 import subprocess
-import re
 import ctypes
-import configparser
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from clear_output_cache import clear_output_cache
+from config_manager import load_config, save_config, get_posts_dir
+from progress_manager import load_review_progress, save_review_progress, clear_review_progress
+from file_manager import (
+    ensure_output_dir,
+    list_output_files,
+    list_markdown_files,
+    make_output_stem,
+    resolve_md_path,
+    replace_sentence_in_file,
+    check_sentence_in_file,
+)
+from data_parser import (
+    split_label,
+    parse_label,
+    parse_ai_json,
+    load_change_out,
+    load_filtered_change_lines,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
-PROGRESS_FILE = BASE_DIR / "review_progress.ini"
-PROGRESS_SECTION = "review_progress"
 
 
 ANSI_RESET = "\x1b[0m"
@@ -95,37 +108,7 @@ def _render_footer(text: str) -> None:
     print(_style(text, ANSI_DIM, ANSI_GRAY))
 
 
-def ensure_output_dir() -> Path:
-    output_dir = BASE_DIR / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    return output_dir
-
-
-def list_output_files(pattern: str = "*.txt") -> List[Path]:
-    output_dir = ensure_output_dir()
-    return sorted([p for p in output_dir.glob(pattern) if p.is_file()])
-
-
-def load_posts_dir() -> Path:
-    config_path = BASE_DIR / "config.json"
-    default_path = BASE_DIR / "posts"
-
-    if not config_path.exists():
-        return default_path.resolve()
-
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-            path_str = config.get("POSTS_DIR")
-            if path_str:
-                return (BASE_DIR / path_str).resolve()
-    except Exception as e:
-        print(f"⚠️警告：加载配置失败 {e}")
-
-    return default_path.resolve()
-
-
-POSTS_DIR = load_posts_dir()
+POSTS_DIR = get_posts_dir()
 
 
 def clear_screen() -> None:
@@ -206,123 +189,23 @@ def run_script(args: List[str]) -> int:
     return result.returncode
 
 
-def split_label(line: str) -> Tuple[str, str]:
-    if line.startswith("@@S"):
-        end = line.find("@@ ")
-        if end != -1:
-            label = line[: end + 3]
-            return label, line[end + 3:]
-    return "", line
+def wait_for_key(message: str = "按任意键继续...") -> None:
+    print()
+    print(_style(message, ANSI_DIM, ANSI_GRAY))
+    read_key()
 
 
-def parse_label(label: str) -> Tuple[str, str]:
-    match = re.match(r"^@@S\d+\|([^@]+)@@\s*$", label)
-    if not match:
-        return "", ""
-    return label, match.group(1)
+def resolve_md_path_cli(filename: str, cache: Dict[str, Path]) -> Optional[Path]:
+    """
+    CLI 特有的 Markdown 路径解析函数，包含用户交互
+    """
+    # 先尝试使用通用的解析函数
+    path = resolve_md_path(filename, POSTS_DIR, cache)
+    if path:
+        return path
 
-
-def parse_ai_json(text: str) -> Dict[str, str]:
-    """解析 AI 输出的 JSON 格式"""
-    try:
-        data = json.loads(text)
-        return {
-            "original_text": data.get("original_text", ""),
-            "error_type": data.get("error_type", ""),
-            "description": data.get("description", ""),
-            "checked_text": data.get("checked_text", ""),
-        }
-    except (json.JSONDecodeError, AttributeError):
-        # 如果解析失败，返回空字典
-        return {
-            "original_text": "",
-            "error_type": "",
-            "description": "",
-            "checked_text": text.strip(),
-        }
-
-
-def load_change_out(path: Path) -> Dict[str, Dict[str, str]]:
-    data: Dict[str, Dict[str, str]] = {}
-    with open(path, "r", encoding="utf-8") as f:
-        for raw_line in f:
-            line = raw_line.strip()
-            if not line:
-                continue
-            label, content = split_label(line)
-            if not label:
-                continue
-            parsed = parse_ai_json(content)
-            data[label] = {
-                "original_text": parsed["original_text"],
-                "error_type": parsed["error_type"],
-                "description": parsed["description"],
-                "checked_text": parsed["checked_text"],
-                "raw": content,
-            }
-    return data
-
-
-def load_filtered_change_lines(path: Path, labels: set[str]) -> List[Tuple[str, str]]:
-    items: List[Tuple[str, str]] = []
-    with open(path, "r", encoding="utf-8") as f:
-        for raw_line in f:
-            line = raw_line.strip()
-            if not line:
-                continue
-            label, sentence = split_label(line)
-            if label and label in labels:
-                items.append((label, sentence))
-    return items
-
-
-def load_review_progress() -> Tuple[str, str, int]:
-    if not PROGRESS_FILE.exists():
-        return "", "", 0
-    config = configparser.ConfigParser()
-    try:
-        config.read(PROGRESS_FILE, encoding="utf-8")
-        if PROGRESS_SECTION not in config:
-            return "", "", 0
-        section = config[PROGRESS_SECTION]
-        change_path = section.get("change_file", "")
-        change_out_file = section.get("change_out_file", "")
-        next_index = int(section.get("next_index", "0"))
-        return change_path, change_out_file, max(0, next_index)
-    except Exception:
-        return "", "", 0
-
-
-def save_review_progress(change_path: Path, change_out_file: Path, next_index: int) -> None:
-    config = configparser.ConfigParser()
-    config[PROGRESS_SECTION] = {
-        "change_file": str(change_path),
-        "change_out_file": str(change_out_file),
-        "next_index": str(max(0, next_index)),
-    }
-    try:
-        with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
-            config.write(f)
-    except Exception:
-        return
-
-
-def clear_review_progress() -> None:
-    try:
-        if PROGRESS_FILE.exists():
-            PROGRESS_FILE.unlink()
-    except Exception:
-        return
-
-
-def resolve_md_path(filename: str, cache: Dict[str, Path]) -> Optional[Path]:
-    if filename in cache:
-        return cache[filename]
-
+    # 如果有多个匹配项，让用户选择
     matches = [p for p in POSTS_DIR.rglob(filename) if p.is_file()]
-    if len(matches) == 1:
-        cache[filename] = matches[0]
-        return matches[0]
     if len(matches) > 1:
         print("发现多个同名文件，请选择：")
         for i, p in enumerate(matches, start=1):
@@ -336,6 +219,7 @@ def resolve_md_path(filename: str, cache: Dict[str, Path]) -> Optional[Path]:
         except (ValueError, EOFError):
             pass
 
+    # 让用户手动输入路径
     try:
         custom = input(f"未找到 {filename}，请输入完整路径(回车跳过): ").strip()
     except EOFError:
@@ -348,35 +232,10 @@ def resolve_md_path(filename: str, cache: Dict[str, Path]) -> Optional[Path]:
     return None
 
 
-def replace_sentence_in_file(path: Path, old_sentence: str, new_sentence: str) -> bool:
-    try:
-        content = path.read_text(encoding="utf-8")
-    except Exception:
-        return False
-
-    if old_sentence not in content:
-        return False
-
-    updated = content.replace(old_sentence, new_sentence, 1)
-
-    try:
-        path.write_text(updated, encoding="utf-8")
-    except Exception:
-        return False
-    return True
-
-
-def wait_for_key(message: str = "按任意键继续...") -> None:
-    print()
-    print(_style(message, ANSI_DIM, ANSI_GRAY))
-    read_key()
-
-
 def mode_changed_files() -> None:
     # 清除旧的审查进度
-    if PROGRESS_FILE.exists():
-        clear_review_progress()
-    
+    clear_review_progress()
+
     clear_screen()
     _render_header("模式 1：校对修改的 Markdown 文件（需要 Git）")
     print(_style(f"目录：{POSTS_DIR}", ANSI_GRAY))
@@ -411,22 +270,11 @@ def mode_changed_files() -> None:
     wait_for_key()
 
 
-def list_markdown_files() -> List[Path]:
-    if not POSTS_DIR.exists():
-        return []
-    return sorted([p for p in POSTS_DIR.rglob("*.md") if p.is_file()])
-
-
-def make_output_stem(path: Path) -> str:
-    return path.stem
-
-
 def mode_single_file() -> None:
     # 清除旧的审查进度
-    if PROGRESS_FILE.exists():
-        clear_review_progress()
-    
-    files = list_markdown_files()
+    clear_review_progress()
+
+    files = list_markdown_files(POSTS_DIR)
     if not files:
         clear_screen()
         _render_header("模式 2：选择一个 Markdown 文件")
@@ -567,17 +415,12 @@ def mode_review_changes() -> None:
         _, filename = parse_label(label)
         md_path = None
         if filename:
-            md_path = resolve_md_path(filename, md_cache)
+            md_path = resolve_md_path_cli(filename, md_cache)
 
         # 2. 预检查句子是否存在于文件中
         exists = False
         if md_path:
-            try:
-                content = md_path.read_text(encoding="utf-8")
-                if sentence in content:
-                    exists = True
-            except Exception:
-                pass
+            exists = check_sentence_in_file(md_path, sentence)
 
         # 3. 如果没找到，直接跳过并记录
         if not exists:
@@ -606,70 +449,70 @@ def mode_review_changes() -> None:
         print(f"建议: {checked_text}")
         print(_style(_hr(), ANSI_GRAY))
         print("输入修改后的句子，直接回车应用 AI 建议，Ctrl+P 跳过，输入 Q 退出并保存进度：")
-        
+
         # 读取用户输入，支持 Ctrl+P 跳过
         try:
             import msvcrt
             import sys
-            
+
             sys.stdout.write("> ")
             sys.stdout.flush()
-            
+
             buffer = []
             while True:
                 ch = msvcrt.getwch()
-                
+
                 # Ctrl+P 跳过
                 if ch == '\x10':
                     print("\n[已跳过]")
                     save_review_progress(change_path, change_out_path, idx + 1)
                     new_text = None
                     break
-                
+
                 # Enter 确认
                 elif ch == '\r':
                     print()
                     new_text = "".join(buffer)
                     break
-                
+
                 # Backspace
                 elif ch == '\x08':
                     if buffer:
                         sys.stdout.write('\b \b')
                         sys.stdout.flush()
                         buffer.pop()
-                
+
                 # Ctrl+C 取消
                 elif ch == '\x03':
                     print("\n[已取消]")
                     save_review_progress(change_path, change_out_path, idx)
                     return
-                
+
                 else:
                     sys.stdout.write(ch)
                     sys.stdout.flush()
                     buffer.append(ch)
-            
+
         except (ImportError, EOFError):
             # 如果 msvcrt 不可用，回退到标准输入
             try:
                 new_text = input("> ")
             except EOFError:
                 new_text = ""
-        
+
         # 如果按了 Ctrl+P 跳过，继续下一个
         if new_text is None:
             continue
-        
+
         # 检查是否退出
         if new_text.strip().lower() == "q":
             save_review_progress(change_path, change_out_path, idx)
             print(_style("已保存进度，稍后可继续。", ANSI_YELLOW))
             wait_for_key()
             return
-        
+
         new_text = new_text.strip()
-        
+
         # 如果什么都不输入直接回车，应用 AI 建议
         if not new_text:
             new_text = checked_text.strip()
@@ -764,31 +607,10 @@ def get_multiline_input() -> str:
         sys.stdout.flush()
 
 
-def load_full_config() -> dict:
-    config_path = BASE_DIR / "config.json"
-    if not config_path.exists():
-        return {}
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def save_full_config(config: dict) -> None:
-    config_path = BASE_DIR / "config.json"
-    try:
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        print(f"保存配置失败: {e}")
-        wait_for_key()
-
-
 def mode_config() -> None:
     global POSTS_DIR
     while True:
-        config = load_full_config()
+        config = load_config()
         if not config:
             _render_header("配置选项")
             print("无法加载配置文件 config.json")
@@ -842,13 +664,13 @@ def mode_config() -> None:
                     continue
 
             config[key] = new_val
-            save_full_config(config)
+            save_config(config)
             print("配置已保存")
 
             # 如果更改了 POSTS_DIR，更新全局变量
             if key == "POSTS_DIR":
                 # 重新加载逻辑
-                POSTS_DIR = load_posts_dir()
+                POSTS_DIR = get_posts_dir()
 
             wait_for_key()
 

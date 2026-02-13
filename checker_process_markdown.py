@@ -193,12 +193,12 @@ def split_into_sentences(text_blocks: list[str]) -> list[str]:
     def find_inline_style_ranges(text: str) -> list[tuple[int, int, str]]:
         """
         查找文本中所有markdown内联样式的区间。
-        
+
         Returns:
             list[tuple[int, int, str]]: (start_pos, end_pos, marker) 列表
         """
         ranges = []
-        
+
         # Markdown内联样式标记，按长度从长到短排序，避免匹配冲突
         # 格式: (marker, is_symmetric)
         markers = [
@@ -208,30 +208,30 @@ def split_into_sentences(text_blocks: list[str]) -> list[str]:
             ('*', True),     # 斜体
             ('_', True),     # 斜体（下划线）
         ]
-        
+
         for marker, is_symmetric in markers:
             marker_len = len(marker)
             pos = 0
-            
+
             while pos < len(text):
                 # 查找开始标记
                 start = text.find(marker, pos)
                 if start == -1:
                     break
-                
+
                 # 查找结束标记
                 end_search_start = start + marker_len
                 end = text.find(marker, end_search_start)
-                
+
                 if end == -1:
                     # 没有找到结束标记，跳过此开始标记
                     pos = start + 1
                     continue
-                
+
                 # 记录区间 [start, end + marker_len)
                 ranges.append((start, end + marker_len, marker))
                 pos = end + marker_len
-        
+
         # 按开始位置排序
         ranges.sort(key=lambda x: x[0])
         return ranges
@@ -239,7 +239,7 @@ def split_into_sentences(text_blocks: list[str]) -> list[str]:
     def is_inside_style(pos: int, style_ranges: list[tuple[int, int, str]]) -> tuple[bool, int]:
         """
         检查位置 pos 是否在某个样式区间内。
-        
+
         Returns:
             (is_inside, style_end): 如果在样式内，返回(True, 样式结束位置)，否则(False, pos)
         """
@@ -252,23 +252,24 @@ def split_into_sentences(text_blocks: list[str]) -> list[str]:
         """
         从start_pos开始查找下一个句子的结束位置。
         考虑句末标点和markdown内联样式，以较长的边界为准。
-        
+
         Returns:
             句子结束位置的索引（不包含该位置）。
         """
         search_text = text[start_pos:]
         match = sentence_end_pattern.search(search_text)
-        
+
         if not match:
             # 没有找到句末标点，返回文本结束位置
             return len(text)
-        
+
         # 句末标点的绝对结束位置
         punctuation_end = start_pos + match.end()
-        
+
         # 检查标点位置是否在某个内联样式中
-        is_inside, style_end = is_inside_style(punctuation_end - 1, style_ranges)
-        
+        is_inside, style_end = is_inside_style(
+            punctuation_end - 1, style_ranges)
+
         if is_inside:
             # 在样式内，使用样式结束位置
             return style_end
@@ -298,12 +299,12 @@ def split_into_sentences(text_blocks: list[str]) -> list[str]:
             while pos < len(text):
                 end_pos = find_sentence_boundary(text, pos, style_ranges)
                 sentence = text[pos:end_pos].strip()
-                
+
                 if sentence:
                     # 将多个连续空格压缩为单个空格
                     sentence = re.sub(r'\s+', ' ', sentence)
                     cleaned_sentences.append(sentence)
-                
+
                 if end_pos == pos:
                     # 防止无限循环
                     pos += 1

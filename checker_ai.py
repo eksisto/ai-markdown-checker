@@ -81,9 +81,9 @@ def initialize_client(config: dict):
         client_kwargs = {}
         if config.get("OLLAMA_HOST"):
             client_kwargs['host'] = config["OLLAMA_HOST"]
-        
+
         client = ollama.Client(**client_kwargs)
-        
+
         # 通过列出模型来验证连接
         models = client.list()
         return client
@@ -117,7 +117,7 @@ def get_ai_response(client: ollama.Client, content: str, config: dict) -> str:
             f"{config['SYSTEM_PROMPT']}\n\n"
             "如果没有错误，error_type和description填写空字符串，checked_text与original_text保持一致。"
         )
-        
+
         json_examples = (
             "以下是一些示例输出：\n"
             '{"original_text":"小明紧紧的抱住了妈妈。","error_type":"错别字","description":"“的/地”混淆，状语用“地”。","checked_text":"小明紧紧地抱住了妈妈。"}\n'
@@ -133,14 +133,14 @@ def get_ai_response(client: ollama.Client, content: str, config: dict) -> str:
             '{"original_text":"能否按期完成任务，关键在于质量。","error_type":"逻辑错误","description":"“能否”是两面性，后句不能只说一面。","checked_text":"能否按期完成任务，关键在于能否保证质量。"}\n'
             '{"original_text":"傍晚时分，公园里传来阵阵欢声笑语。","error_type":"","description":"","checked_text":"傍晚时分，公园里传来阵阵欢声笑语。"}'
         )
-        
+
         # 构建 options 参数
         options = {}
         if "temperature" in config:
             options["temperature"] = config["temperature"]
         if "top_p" in config:
             options["top_p"] = config["top_p"]
-        
+
         # 使用流式输出以获得更快的响应体验
         stream = client.chat(
             model=config["OLLAMA_MODEL"],
@@ -154,7 +154,7 @@ def get_ai_response(client: ollama.Client, content: str, config: dict) -> str:
             stream=True,  # 启用流式输出
             think=False,  # 关闭 Ollama 思考
         )
-        
+
         # 收集流式响应
         ai_result = ""
         for chunk in stream:
@@ -247,7 +247,7 @@ def main():
     print(f"🤖 模型: {config['OLLAMA_MODEL']}")
     print(f"⚡ 提示词: \"{config['SYSTEM_PROMPT']}\"")
     if config.get("OLLAMA_HOST"):
-        print(f"  Ollama 地址: {config['OLLAMA_HOST']}")
+        print(f"🦙 Ollama 地址: {config['OLLAMA_HOST']}")
     print("-" * 50)
 
     try:
