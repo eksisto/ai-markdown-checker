@@ -6,7 +6,7 @@
 
 功能:
 - 自动忽略 YAML Front Matter。
-- 使用AST（抽象语法树）解析 Markdown，精准识别并忽略代码块、表格等非段落内容。
+- 使用 AST（抽象语法树）解析 Markdown，精准识别并忽略代码块、表格等非段落内容。
 -只提取段落、列表、引用中的文本。
 - 将提取的内容按句子（以'。'、'！'、'？'结尾，包括与括号的组合）分割。
 - 将结果以每句一行的形式输出到文本文件。
@@ -173,7 +173,8 @@ def split_into_sentences(text_blocks: list[str]) -> list[str]:
 
     特别处理：
     - 兼容中英文分句规则。
-    - 当句号、问号、感叹号与右（后）括号或引号（如 ”、’、"、'、）等）组合出现时，以最后一个符号作为断句点。
+    - 当句号、问号、感叹号与右（后）括号或引号（如 "、'、"、'、）等）组合出现时，以最后一个符号作为断句点。
+    - 考虑 Markdown 内联样式（加粗、斜体、删除线等），如果样式包裹多个句子，保持样式完整性，以长的为最终划分句标准。
     - 针对没有标点结尾的独立文本块（如未加句号的列表项），也会将其作为独立句子保留。
 
     Args:
@@ -184,24 +185,104 @@ def split_into_sentences(text_blocks: list[str]) -> list[str]:
     """
     print("正在进行句子分割...")
 
-    # 优化的中英文通用的正则表达式：
-    # 匹配以下几种句尾模式 (包含中英文标点及嵌套引号/括号)：
-    # 1. 单独的句尾标点：。！？.!?
-    # 2. 句尾标点 + 后括号/引号：如 。” | ！」 | ." | ?) | !' 等
-    # 3. 后括号/引号 + 句尾标点：如 ”。 | 」！ | ". | )? 等
-    # 包含符号： ） ” ’ 」 』 ) ] } " '
-    sentence_pattern = re.compile(
-        r'([^。！？.!?]+?(?:[。！？.!?][）”’」』"\'\)\]}]+|[）”’」』"\'\)\]}]+[。！？.!?]|[。！？.!?]))'
+    # 句末标点的正则表达式
+    sentence_end_pattern = re.compile(
+        r'(?:[。！？.!?][）“‘」』"\'\)\]\}]+|[）“‘」』"\'\)\]\}]+[。！？.!?]|[。！？.!?])'
     )
+
+    def find_inline_style_ranges(text: str) -> list[tuple[int, int, str]]:
+        """
+        查找文本中所有markdown内联样式的区间。
+        
+        Returns:
+            list[tuple[int, int, str]]: (start_pos, end_pos, marker) 列表
+        """
+        ranges = []
+        
+        # Markdown内联样式标记，按长度从长到短排序，避免匹配冲突
+        # 格式: (marker, is_symmetric)
+        markers = [
+            ('***', True),   # 加粗斜体
+            ('**', True),    # 加粗
+            ('~~', True),    # 删除线
+            ('*', True),     # 斜体
+            ('_', True),     # 斜体（下划线）
+        ]
+        
+        for marker, is_symmetric in markers:
+            marker_len = len(marker)
+            pos = 0
+            
+            while pos < len(text):
+                # 查找开始标记
+                start = text.find(marker, pos)
+                if start == -1:
+                    break
+                
+                # 查找结束标记
+                end_search_start = start + marker_len
+                end = text.find(marker, end_search_start)
+                
+                if end == -1:
+                    # 没有找到结束标记，跳过此开始标记
+                    pos = start + 1
+                    continue
+                
+                # 记录区间 [start, end + marker_len)
+                ranges.append((start, end + marker_len, marker))
+                pos = end + marker_len
+        
+        # 按开始位置排序
+        ranges.sort(key=lambda x: x[0])
+        return ranges
+
+    def is_inside_style(pos: int, style_ranges: list[tuple[int, int, str]]) -> tuple[bool, int]:
+        """
+        检查位置 pos 是否在某个样式区间内。
+        
+        Returns:
+            (is_inside, style_end): 如果在样式内，返回(True, 样式结束位置)，否则(False, pos)
+        """
+        for start, end, marker in style_ranges:
+            if start < pos < end:
+                return True, end
+        return False, pos
+
+    def find_sentence_boundary(text: str, start_pos: int, style_ranges: list[tuple[int, int, str]]) -> int:
+        """
+        从start_pos开始查找下一个句子的结束位置。
+        考虑句末标点和markdown内联样式，以较长的边界为准。
+        
+        Returns:
+            句子结束位置的索引（不包含该位置）。
+        """
+        search_text = text[start_pos:]
+        match = sentence_end_pattern.search(search_text)
+        
+        if not match:
+            # 没有找到句末标点，返回文本结束位置
+            return len(text)
+        
+        # 句末标点的绝对结束位置
+        punctuation_end = start_pos + match.end()
+        
+        # 检查标点位置是否在某个内联样式中
+        is_inside, style_end = is_inside_style(punctuation_end - 1, style_ranges)
+        
+        if is_inside:
+            # 在样式内，使用样式结束位置
+            return style_end
+        else:
+            # 不在样式内，使用标点位置
+            return punctuation_end
 
     cleaned_sentences = []
 
     for block in text_blocks:
         # 1. 先在整个文本块中过滤掉可能跨行的公式块 $$...$$
-        # 使用 re.DOTALL 使得 . 可以匹配换行符，从而正确识别跨行公式
         block = re.sub(r'\$\$.+?\$\$', '', block, flags=re.DOTALL)
 
-        # 2. 将处理后的文本块按换行符分割，即使在同一个段落中，不同行的文本也会被分开处理
+        # 2. 将处理后的文本块按换行符分割
         sub_lines = block.split('\n')
 
         for text in sub_lines:
@@ -209,26 +290,25 @@ def split_into_sentences(text_blocks: list[str]) -> list[str]:
             if not text:
                 continue
 
-            sentences = sentence_pattern.findall(text)
+            # 识别所有内联样式区间
+            style_ranges = find_inline_style_ranges(text)
 
-            # 检查是否有未被正则捕获的残留文本（如结尾没有标点的情况）
-            # 计算已捕获句子的总长度
-            captured_len = sum(len(s) for s in sentences)
-
-            if captured_len < len(text):
-                remainder = text[captured_len:].strip()
-                if remainder:
-                    # 将残留部分作为一个新句子
-                    sentences.append(remainder)
-
-            # 清理每个句子，去除多余空白
-            for s in sentences:
-                s_cleaned = s.strip()
-                if not s_cleaned:  # 跳过空句子
-                    continue
-                # 将多个连续空格压缩为单个空格
-                s_cleaned = re.sub(r'\s+', ' ', s_cleaned)
-                cleaned_sentences.append(s_cleaned)
+            # 使用新的分句逻辑
+            pos = 0
+            while pos < len(text):
+                end_pos = find_sentence_boundary(text, pos, style_ranges)
+                sentence = text[pos:end_pos].strip()
+                
+                if sentence:
+                    # 将多个连续空格压缩为单个空格
+                    sentence = re.sub(r'\s+', ' ', sentence)
+                    cleaned_sentences.append(sentence)
+                
+                if end_pos == pos:
+                    # 防止无限循环
+                    pos += 1
+                else:
+                    pos = end_pos
 
     print(f"  - 成功分割出 {len(cleaned_sentences)} 个句子。")
     return cleaned_sentences
