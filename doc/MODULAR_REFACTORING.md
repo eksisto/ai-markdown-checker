@@ -61,12 +61,16 @@
 ### 主程序
 
 #### `checker.py` - CLI 版本
+
 命令行界面版本，包含 CLI 特有的交互功能：
+
 - `resolve_md_path_cli()` - CLI 特有的路径解析（包含命令行交互）
 - 其他 CLI 特有的 UI 函数（菜单、终端样式等）
 
 #### `gui.py` - GUI 版本
+
 图形界面版本，包含 GUI 特有的功能：
+
 - `_resolve_md_path()` - GUI 特有的路径解析（使用对话框）
 - 其他 GUI 特有的组件（主题管理、Qt Widget 等）
 
