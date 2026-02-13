@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from openai import OpenAI, APIConnectionError, AuthenticationError
 
 from checker_add import GitDiffExtractor
+from checker_ai import initialize_client, get_ai_response
 from checker_process_markdown import extract_text_from_markdown, split_into_sentences, write_to_txt
 from clear_output_cache import clear_output_cache
 from checker import (
@@ -37,9 +37,8 @@ BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.json"
 
 REQUIRED_CONFIG_KEYS = [
-    "OPENAI_API_KEY",
-    "USER_PROMPT",
-    "GPT_MODEL",
+    "SYSTEM_PROMPT",
+    "OLLAMA_MODEL",
     "REQUEST_DELAY_SECONDS",
 ]
 
@@ -261,14 +260,14 @@ QMessageBox QTextEdit, QMessageBox QTextBrowser {{
     border-radius: 6px;
     color: {text_primary};
 }}
-QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QComboBox {{
+QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
     background: {input_bg};
     border: 1px solid {input_border};
     border-radius: 8px;
     padding: 6px 8px;
     color: {text_primary};
 }}
-QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus, QComboBox:focus {{
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
     border: 1px solid {focus_border};
 }}
 QComboBox::drop-down {{
@@ -293,22 +292,22 @@ QComboBox QAbstractItemView {{
     selection-color: {selection_text};
     outline: 0;
 }}
-QSpinBox {{
+QSpinBox, QDoubleSpinBox {{
     padding-right: 8px;
 }}
-QSpinBox::up-button {{
+QSpinBox::up-button, QDoubleSpinBox::up-button {{
     width: 0px;
     height: 0px;
     border: none;
     background: transparent;
 }}
-QSpinBox::down-button {{
+QSpinBox::down-button, QDoubleSpinBox::down-button {{
     width: 0px;
     height: 0px;
     border: none;
     background: transparent;
 }}
-QSpinBox::up-arrow, QSpinBox::down-arrow {{
+QSpinBox::up-arrow, QSpinBox::down-arrow, QDoubleSpinBox::up-arrow, QDoubleSpinBox::down-arrow {{
     width: 0px;
     height: 0px;
     image: none;
@@ -416,14 +415,14 @@ QMessageBox QTextEdit, QMessageBox QTextBrowser {{
     border-radius: 6px;
     color: {text_primary};
 }}
-QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QComboBox {{
+QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
     background: {input_bg};
     border: 1px solid {input_border};
     border-radius: 8px;
     padding: 6px 8px;
     color: {text_primary};
 }}
-QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus, QComboBox:focus {{
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
     border: 1px solid {focus_border};
 }}
 QComboBox::drop-down {{
@@ -448,22 +447,22 @@ QComboBox QAbstractItemView {{
     selection-background-color: {selection_bg};
     outline: 0;
 }}
-QSpinBox {{
+QSpinBox, QDoubleSpinBox {{
     padding-right: 8px;
 }}
-QSpinBox::up-button {{
+QSpinBox::up-button, QDoubleSpinBox::up-button {{
     width: 0px;
     height: 0px;
     border: none;
     background: transparent;
 }}
-QSpinBox::down-button {{
+QSpinBox::down-button, QDoubleSpinBox::down-button {{
     width: 0px;
     height: 0px;
     border: none;
     background: transparent;
 }}
-QSpinBox::up-arrow, QSpinBox::down-arrow {{
+QSpinBox::up-arrow, QSpinBox::down-arrow, QDoubleSpinBox::up-arrow, QDoubleSpinBox::down-arrow {{
     width: 0px;
     height: 0px;
     image: none;
@@ -597,8 +596,8 @@ class AiWorker(QtCore.QThread):
             total = len(lines)
             self.prepared.emit(str(change_path), str(out_path), total)
 
-            client = self._create_client()
-            delay = float(self._config.get("REQUEST_DELAY_SECONDS", 0))
+            client = initialize_client(self._config)
+            delay = float(self._config.get("REQUEST_DELAY_SECONDS", 0.1))
 
             with open(out_path, "w", encoding="utf-8") as f_out:
                 for idx, raw_line in enumerate(lines, start=1):
@@ -611,11 +610,7 @@ class AiWorker(QtCore.QThread):
                     if not content:
                         self.progress.emit(idx, total)
                         continue
-                    result = self._request(client, content)
-                    if result in ("没有问题", "没有问题。"):
-                        self.progress.emit(idx, total)
-                        time.sleep(delay)
-                        continue
+                    result = get_ai_response(client, content, self._config)
                     f_out.write(f"{label}{result}\n")
                     f_out.flush()
                     self.progress.emit(idx, total)
@@ -656,37 +651,6 @@ class AiWorker(QtCore.QThread):
         write_to_txt(sentences, str(change_path), str(self._input_path))
         return change_path, out_path
 
-    def _create_client(self) -> OpenAI:
-        api_key = str(self._config.get("OPENAI_API_KEY", "")).strip()
-        if not api_key:
-            raise RuntimeError("需要配置 OPENAI_API_KEY")
-        base_url = self._config.get("OPENAI_API_BASE_URL")
-        client = OpenAI(api_key=api_key, base_url=base_url)
-        try:
-            client.models.list()
-        except AuthenticationError as exc:
-            raise RuntimeError("API Key 无效") from exc
-        except APIConnectionError as exc:
-            raise RuntimeError("无法连接到 API") from exc
-        return client
-
-    def _request(self, client: OpenAI, content: str) -> str:
-        prompt = str(self._config.get("USER_PROMPT", ""))
-        model = str(self._config.get("GPT_MODEL", ""))
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": content},
-                ],
-                temperature=0.5,
-                max_tokens=1500,
-            )
-            return response.choices[0].message.content.strip()
-        except Exception as exc:
-            return f"API_ERROR: {exc}"
-
 
 class ReviewItem:
     def __init__(
@@ -696,12 +660,16 @@ class ReviewItem:
         origin: str,
         suggestion: str,
         filename: str,
+        error_type: str = "",
+        description: str = "",
     ) -> None:
         self.label = label
         self.sentence = sentence
         self.origin = origin
         self.suggestion = suggestion
         self.filename = filename
+        self.error_type = error_type
+        self.description = description
 
 
 class AnimatedTabBar(QtWidgets.QTabBar):
@@ -1084,6 +1052,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.review_progress_label = QtWidgets.QLabel("未加载任何条目")
         self.review_file_label = QtWidgets.QLabel("文件：-")
+        self.review_error_type_label = QtWidgets.QLabel("错误类型：-")
+        self.review_description_label = QtWidgets.QLabel("错误描述：-")
 
         self.review_origin = QtWidgets.QPlainTextEdit()
         self.review_origin.setReadOnly(True)
@@ -1111,6 +1081,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         detail_layout.addWidget(self.review_progress_label)
         detail_layout.addWidget(self.review_file_label)
+        detail_layout.addWidget(self.review_error_type_label)
+        detail_layout.addWidget(self.review_description_label)
         detail_layout.addWidget(QtWidgets.QLabel("原文"))
         detail_layout.addWidget(self.review_origin)
         detail_layout.addWidget(QtWidgets.QLabel("建议"))
@@ -1133,12 +1105,18 @@ class MainWindow(QtWidgets.QMainWindow):
         form.setContentsMargins(16, 14, 16, 14)
         self._configure_form_layout(form)
 
-        self.api_key_field = QtWidgets.QLineEdit()
-        self.api_key_field.setEchoMode(QtWidgets.QLineEdit.Password)
-        self.base_url_field = QtWidgets.QLineEdit()
+        self.host_field = QtWidgets.QLineEdit()
+        self.host_field.setPlaceholderText("http://localhost:11434")
         self.model_field = QtWidgets.QLineEdit()
-        self.delay_spin = QtWidgets.QSpinBox()
+        self.model_field.setPlaceholderText("qwen3:8b")
+        self.delay_spin = QtWidgets.QDoubleSpinBox()
         self.delay_spin.setRange(0, 3600)
+        self.delay_spin.setDecimals(2)
+        self.delay_spin.setSingleStep(0.1)
+        self.temperature_field = QtWidgets.QLineEdit()
+        self.temperature_field.setPlaceholderText("1")
+        self.top_p_field = QtWidgets.QLineEdit()
+        self.top_p_field.setPlaceholderText("1")
         self.posts_dir_edit = QtWidgets.QLineEdit()
         self.posts_dir_btn = QtWidgets.QPushButton("浏览")
         self.posts_dir_btn.clicked.connect(self._choose_posts_dir)
@@ -1148,10 +1126,11 @@ class MainWindow(QtWidgets.QMainWindow):
         posts_row.addWidget(self.posts_dir_btn)
 
         self.prompt_field = QtWidgets.QPlainTextEdit()
-        form.addRow("API 密钥", self.api_key_field)
-        form.addRow("基础 URL", self.base_url_field)
+        form.addRow("Ollama 地址", self.host_field)
         form.addRow("模型", self.model_field)
         form.addRow("延迟（秒）", self.delay_spin)
+        form.addRow("Temperature", self.temperature_field)
+        form.addRow("Top P", self.top_p_field)
         form.addRow("文章目录", posts_row)
         form.addRow("提示词", self.prompt_field)
 
@@ -1387,10 +1366,12 @@ class MainWindow(QtWidgets.QMainWindow):
         for label, sentence in filtered_lines:
             _, filename = parse_label(label)
             ai_info = change_out_data.get(label, {})
-            origin = ai_info.get("origin") or sentence
-            suggestion = ai_info.get("suggestion") or ai_info.get("raw", "")
+            origin = ai_info.get("original_text") or sentence
+            suggestion = ai_info.get("checked_text") or ai_info.get("raw", "")
+            error_type = ai_info.get("error_type", "")
+            description = ai_info.get("description", "")
             self.review_items.append(ReviewItem(
-                label, sentence, origin, suggestion, filename))
+                label, sentence, origin, suggestion, filename, error_type, description))
 
         self.review_list.clear()
         for item in self.review_items:
@@ -1449,6 +1430,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.review_progress_label.setText(
             f"第 {index + 1} 条 / 共 {len(self.review_items)} 条")
         self.review_file_label.setText(f"文件：{item.filename}")
+        error_type_text = item.error_type if item.error_type else "无"
+        self.review_error_type_label.setText(f"错误类型：{error_type_text}")
+        description_text = item.description if item.description else "无"
+        self.review_description_label.setText(f"错误描述：{description_text}")
         self.review_origin.setPlainText(item.origin)
         self.review_suggestion.setPlainText(item.suggestion)
         self.review_edit.setPlainText("")
@@ -1558,14 +1543,16 @@ class MainWindow(QtWidgets.QMainWindow):
     def _refresh_config_ui(self) -> None:
         self.config = load_config()
         self.posts_dir = get_posts_dir(self.config)
-        self.api_key_field.setText(str(self.config.get("OPENAI_API_KEY", "")))
-        self.base_url_field.setText(
-            str(self.config.get("OPENAI_API_BASE_URL", "")))
-        self.model_field.setText(str(self.config.get("GPT_MODEL", "")))
+        self.host_field.setText(str(self.config.get("OLLAMA_HOST", "")))
+        self.model_field.setText(str(self.config.get("OLLAMA_MODEL", "")))
         self.delay_spin.setValue(
-            int(self.config.get("REQUEST_DELAY_SECONDS", 0)))
+            float(self.config.get("REQUEST_DELAY_SECONDS", 0.1)))
+        self.temperature_field.setText(
+            str(self.config.get("temperature", 1)))
+        self.top_p_field.setText(
+            str(self.config.get("top_p", 1)))
         self.posts_dir_edit.setText(str(self.posts_dir))
-        self.prompt_field.setPlainText(str(self.config.get("USER_PROMPT", "")))
+        self.prompt_field.setPlainText(str(self.config.get("SYSTEM_PROMPT", "")))
         self._update_run_mode()
         self._refresh_git_ui()
 
@@ -1575,18 +1562,25 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _save_config_ui(self) -> None:
         config = dict(self.config)
-        config["OPENAI_API_KEY"] = self.api_key_field.text().strip()
-        base_url = self.base_url_field.text().strip()
-        if base_url:
-            config["OPENAI_API_BASE_URL"] = base_url
+        host = self.host_field.text().strip()
+        if host:
+            config["OLLAMA_HOST"] = host
         else:
-            config.pop("OPENAI_API_BASE_URL", None)
-        config["GPT_MODEL"] = self.model_field.text().strip()
-        config["REQUEST_DELAY_SECONDS"] = int(self.delay_spin.value())
+            config.pop("OLLAMA_HOST", None)
+        config["OLLAMA_MODEL"] = self.model_field.text().strip()
+        config["REQUEST_DELAY_SECONDS"] = float(self.delay_spin.value())
+        try:
+            config["temperature"] = float(self.temperature_field.text().strip())
+        except ValueError:
+            config["temperature"] = 1
+        try:
+            config["top_p"] = float(self.top_p_field.text().strip())
+        except ValueError:
+            config["top_p"] = 1
         posts_dir = self.posts_dir_edit.text().strip()
         if posts_dir:
             config["POSTS_DIR"] = posts_dir
-        config["USER_PROMPT"] = self.prompt_field.toPlainText()
+        config["SYSTEM_PROMPT"] = self.prompt_field.toPlainText()
         save_config(config)
         self._log("配置已保存")
         self._refresh_config_ui()

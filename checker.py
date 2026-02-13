@@ -222,11 +222,24 @@ def parse_label(label: str) -> Tuple[str, str]:
     return label, match.group(1)
 
 
-def parse_ai_suggestion(text: str) -> Tuple[str, str]:
-    match = re.match(r"^\s*\[(.*)\]\s*\[(.*)\]\s*$", text)
-    if match:
-        return match.group(1).strip(), match.group(2).strip()
-    return "", text.strip()
+def parse_ai_json(text: str) -> Dict[str, str]:
+    """解析 AI 输出的 JSON 格式"""
+    try:
+        data = json.loads(text)
+        return {
+            "original_text": data.get("original_text", ""),
+            "error_type": data.get("error_type", ""),
+            "description": data.get("description", ""),
+            "checked_text": data.get("checked_text", ""),
+        }
+    except (json.JSONDecodeError, AttributeError):
+        # 如果解析失败，返回空字典
+        return {
+            "original_text": "",
+            "error_type": "",
+            "description": "",
+            "checked_text": text.strip(),
+        }
 
 
 def load_change_out(path: Path) -> Dict[str, Dict[str, str]]:
@@ -239,10 +252,12 @@ def load_change_out(path: Path) -> Dict[str, Dict[str, str]]:
             label, content = split_label(line)
             if not label:
                 continue
-            origin, suggestion = parse_ai_suggestion(content)
+            parsed = parse_ai_json(content)
             data[label] = {
-                "origin": origin,
-                "suggestion": suggestion,
+                "original_text": parsed["original_text"],
+                "error_type": parsed["error_type"],
+                "description": parsed["description"],
+                "checked_text": parsed["checked_text"],
                 "raw": content,
             }
     return data
@@ -535,8 +550,10 @@ def mode_review_changes() -> None:
         label, sentence = filtered_lines[idx]
 
         ai_info = change_out_data.get(label, {})
-        origin = ai_info.get("origin") or sentence
-        suggestion = ai_info.get("suggestion") or ai_info.get("raw", "")
+        original_text = ai_info.get("original_text") or sentence
+        error_type = ai_info.get("error_type", "")
+        description = ai_info.get("description", "")
+        checked_text = ai_info.get("checked_text") or ai_info.get("raw", "")
 
         # 1. 解析标签并定位文件
         _, filename = parse_label(label)
@@ -557,7 +574,7 @@ def mode_review_changes() -> None:
         # 3. 如果没找到，直接跳过并记录
         if not exists:
             change_line = f"{label}{sentence}"
-            raw_out = ai_info.get("raw") or ai_info.get("suggestion") or ""
+            raw_out = ai_info.get("raw") or ai_info.get("checked_text") or ""
             out_line = f"{label}{raw_out}" if raw_out else label
             failed_pairs.append((change_line, out_line))
             save_review_progress(change_path, change_out_path, idx + 1)
@@ -567,38 +584,96 @@ def mode_review_changes() -> None:
         clear_screen()
         _render_header("模式 3：用户审查修改")
         print(_style(f"进度: {idx + 1}/{total_lines}", ANSI_GREEN))
-        print(_style("Enter 跳过 | 输入新句子并回车确认 | Q 退出并保存进度", ANSI_GRAY))
+        print(_style("Enter 应用 AI 建议 | Ctrl+P 跳过不修改 | 输入新句子并回车确认 | Q 退出并保存进度", ANSI_GRAY))
         print()
 
         print(_style(_hr(), ANSI_GRAY))
         print(f"文件: {md_path}")
         print(_style(_hr(), ANSI_GRAY))
-        print(f"原句: {origin}")
-        print(f"建议: {suggestion}")
+        print(f"原句: {original_text}")
+        if error_type:
+            print(_style(f"错误类型: {error_type}", ANSI_YELLOW))
+        if description:
+            print(_style(f"说明: {description}", ANSI_CYAN))
+        print(f"建议: {checked_text}")
         print(_style(_hr(), ANSI_GRAY))
-        print("输入修改后的句子，直接回车表示不修改，输入 Q 退出并保存进度：")
+        print("输入修改后的句子，直接回车应用 AI 建议，Ctrl+P 跳过，输入 Q 退出并保存进度：")
+        
+        # 读取用户输入，支持 Ctrl+P 跳过
         try:
-            new_text = input("> ")
-        except EOFError:
-            new_text = ""
-
+            import msvcrt
+            import sys
+            
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            
+            buffer = []
+            while True:
+                ch = msvcrt.getwch()
+                
+                # Ctrl+P 跳过
+                if ch == '\x10':
+                    print("\n[已跳过]")
+                    save_review_progress(change_path, change_out_path, idx + 1)
+                    new_text = None
+                    break
+                
+                # Enter 确认
+                elif ch == '\r':
+                    print()
+                    new_text = "".join(buffer)
+                    break
+                
+                # Backspace
+                elif ch == '\x08':
+                    if buffer:
+                        sys.stdout.write('\b \b')
+                        sys.stdout.flush()
+                        buffer.pop()
+                
+                # Ctrl+C 取消
+                elif ch == '\x03':
+                    print("\n[已取消]")
+                    save_review_progress(change_path, change_out_path, idx)
+                    return
+                
+                else:
+                    sys.stdout.write(ch)
+                    sys.stdout.flush()
+                    buffer.append(ch)
+            
+        except (ImportError, EOFError):
+            # 如果 msvcrt 不可用，回退到标准输入
+            try:
+                new_text = input("> ")
+            except EOFError:
+                new_text = ""
+        
+        # 如果按了 Ctrl+P 跳过，继续下一个
+        if new_text is None:
+            continue
+        
+        # 检查是否退出
         if new_text.strip().lower() == "q":
             save_review_progress(change_path, change_out_path, idx)
             print(_style("已保存进度，稍后可继续。", ANSI_YELLOW))
             wait_for_key()
             return
-
+        
         new_text = new_text.strip()
-
+        
+        # 如果什么都不输入直接回车，应用 AI 建议
         if not new_text:
-            save_review_progress(change_path, change_out_path, idx + 1)
-            continue
+            new_text = checked_text.strip()
+            if not new_text:
+                save_review_progress(change_path, change_out_path, idx + 1)
+                continue
 
         if not replace_sentence_in_file(md_path, sentence, new_text):
             # 虽然前面检查过存在，但由于多线程或磁盘延迟（极少数情况）可能失败
             print("未找到可替换的句子，跳过该条。")
             change_line = f"{label}{sentence}"
-            raw_out = ai_info.get("raw") or ai_info.get("suggestion") or ""
+            raw_out = ai_info.get("raw") or ai_info.get("checked_text") or ""
             out_line = f"{label}{raw_out}" if raw_out else label
             failed_pairs.append((change_line, out_line))
 
@@ -739,7 +814,7 @@ def mode_config() -> None:
         print(f"当前值: {current_val}")
         print("请输入新值 (直接回车保持不变):")
 
-        if key == "USER_PROMPT":
+        if key == "SYSTEM_PROMPT":
             new_val = get_multiline_input()
         else:
             print(_style("提示: 仅支持单行输入", ANSI_DIM, ANSI_GRAY))

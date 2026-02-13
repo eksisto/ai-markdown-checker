@@ -1,8 +1,9 @@
 {
-  "OPENAI_API_KEY": "sk-xx",
-  "OPENAI_API_BASE_URL": "http://localhost:11434/v1",
-  "GPT_MODEL": "qwen3-8b-6:latest",
-  "USER_PROMPT": "请认真校对以下句子。\n你只需要寻找错别字、多字、少字的错误。\n若原文存在错误，你回复的格式为：`[修改方法]`\n若整个句子没有问题，则回复“没有问题”/no_think",
-  "REQUEST_DELAY_SECONDS": 2,
-  "POSTS_DIR": "../source/_posts"
+  "OLLAMA_HOST": "http://localhost:11434",
+  "OLLAMA_MODEL": "qwen3:8b",
+  "SYSTEM_PROMPT": "请作为一名专业的文本校对员，请检查并修正以下文本中的所有错误（包括但不限于错别字、语法错误、用词不当、成分残缺等）。不要改变原文的意义，不要进行风格上的修改或重写句子，只修正错误，并保留原句的 Markdown 样式。",
+  "REQUEST_DELAY_SECONDS": 0.1,
+  "POSTS_DIR": "../source/_posts",
+  "temperature": 1.0,
+  "top_p": 1.0
 }
