@@ -173,7 +173,7 @@ def split_into_sentences(text_blocks: list[str]) -> list[str]:
 
     特别处理：
     - 兼容中英文分句规则。
-    - 当句号、问号、感叹号与右（后）括号或引号（如 "、'、"、'、）等）组合出现时，以最后一个符号作为断句点。
+    - 当句号、问号、感叹号与右（后）括号或引号（如 ”、’、"、'、）等）组合出现时，以最后一个符号作为断句点。
     - 考虑 Markdown 内联样式（加粗、斜体、删除线等），如果样式包裹多个句子，保持样式完整性，以长的为最终划分句标准。
     - 针对没有标点结尾的独立文本块（如未加句号的列表项），也会将其作为独立句子保留。
 
@@ -187,19 +187,19 @@ def split_into_sentences(text_blocks: list[str]) -> list[str]:
 
     # 句末标点的正则表达式
     sentence_end_pattern = re.compile(
-        r'(?:[。！？.!?][）“‘」』"\'\)\]\}]+|[）“‘」』"\'\)\]\}]+[。！？.!?]|[。！？.!?])'
+        r'(?:[。！？.!?]+[）”’」』"\'\)\]\}]+|[）”’」』"\'\)\]\}]+[。！？.!?]+|[。！？.!?]+)'
     )
 
     def find_inline_style_ranges(text: str) -> list[tuple[int, int, str]]:
         """
-        查找文本中所有markdown内联样式的区间。
+        查找文本中所有 Markdown 内联样式的区间。
 
         Returns:
             list[tuple[int, int, str]]: (start_pos, end_pos, marker) 列表
         """
         ranges = []
 
-        # Markdown内联样式标记，按长度从长到短排序，避免匹配冲突
+        # Markdown 内联样式标记，按长度从长到短排序，避免匹配冲突
         # 格式: (marker, is_symmetric)
         markers = [
             ('***', True),   # 加粗斜体
@@ -250,8 +250,8 @@ def split_into_sentences(text_blocks: list[str]) -> list[str]:
 
     def find_sentence_boundary(text: str, start_pos: int, style_ranges: list[tuple[int, int, str]]) -> int:
         """
-        从start_pos开始查找下一个句子的结束位置。
-        考虑句末标点和markdown内联样式，以较长的边界为准。
+        从 start_pos 开始查找下一个句子的结束位置。
+        考虑句末标点和 Markdown 内联样式，以较长的边界为准。
 
         Returns:
             句子结束位置的索引（不包含该位置）。
